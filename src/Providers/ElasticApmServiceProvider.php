@@ -1,17 +1,21 @@
 <?php
 
-namespace PhilKra\ElasticApmLaravel\Providers;
+namespace DanGoscomb\ElasticApmLaravel\Providers;
 
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Collection;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Support\Arr;
-use PhilKra\Agent;
-use PhilKra\ElasticApmLaravel\Apm\SpanCollection;
-use PhilKra\ElasticApmLaravel\Apm\Transaction;
-use PhilKra\ElasticApmLaravel\Contracts\VersionResolver;
-use PhilKra\Helper\Timer;
+use Nipwaayoni\Agent;
+use Nipwaayoni\AgentBuilder;
+use Nipwaayoni\Config;
+use DanGoscomb\ElasticApmLaravel\Apm\SpanCollection;
+//use DanGoscomb\ElasticApmLaravel\Apm\Transaction;
+use DanGoscomb\ElasticApmLaravel\Contracts\VersionResolver;
+use Nipwaayoni\Helper\Timer;
+use Nipwaayoni\Events\Transaction;
+use Nipwaayoni\Events\Span;
 
 class ElasticApmServiceProvider extends ServiceProvider
 {
@@ -52,34 +56,30 @@ class ElasticApmServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(Agent::class, function ($app) {
-            return new Agent(
-                array_merge(
-                    [
-                        'framework' => 'Laravel',
-                        'frameworkVersion' => app()->version(),
-                    ],
-                    [
-                        'active' => config('elastic-apm.active'),
-                        'httpClient' => config('elastic-apm.httpClient'),
-                    ],
-                    $this->getAppConfig(),
-                    config('elastic-apm.env'),
-                    config('elastic-apm.server')
-                )
-            );
+            $builder = new AgentBuilder();
+            $builder->withConfig(new Config(['frameworkName' => 'Laravel', 'frameworkVersion' => app()->version()]));
+            return $builder->build();
         });
 
         $this->startTime = $this->app['request']->server('REQUEST_TIME_FLOAT') ?? microtime(true);
         $timer = new Timer($this->startTime);
 
         $collection = new SpanCollection();
+        $this->app->alias(Agent::class, 'elastic-apm');
 
-        $this->app->instance(Transaction::class, new Transaction($collection, $timer));
+        $this->app->singleton(Transaction::class, function ($app) {
+            return app('elastic-apm')->startTransaction('fuck');
+        });
+        $this->app->alias(Transaction::class, 'apm-transaction');
+
+        $this->app->singleton(Span::class, function ($app) {
+            return app('elastic-apm')->factory()->newSpan('Workflow', app('apm-transaction'));
+        });
+        $this->app->alias(Span::class, 'apm-span');
 
         $this->app->instance(Timer::class, $timer);
 
-        $this->app->alias(Agent::class, 'elastic-apm');
-        $this->app->instance('query-log', $collection);
+        //$this->app->instance('query-log', $collection);
 
     }
 
@@ -182,24 +182,22 @@ class ElasticApmServiceProvider extends ServiceProvider
                 ];
             })->values();
 
-            $query = [
-                'name' => 'Eloquent Query',
-                'type' => 'db.mysql.query',
-                'start' => round((microtime(true) - $query->time / 1000 - $this->startTime) * 1000, 3),
-                // calculate start time from duration
-                'duration' => round($query->time, 3),
-                'stacktrace' => $stackTrace,
-                'context' => [
-                    'db' => [
-                        'instance' => $query->connection->getDatabaseName(),
-                        'statement' => $query->sql,
-                        'type' => 'sql',
-                        'user' => $query->connection->getConfig('username'),
-                    ],
+            $agent = app('elastic-apm');
+            $span = $agent->factory()->newSpan('Eloquent Query', app('apm-transaction'));
+            $span->start(((microtime(true)*1000)-$query->time)/1000);
+            $span->stop();
+            $span->setStacktrace($stackTrace->all());
+            $span->setCustomContext([
+                'db' => [
+                    'instance' => $query->connection->getDatabaseName(),
+                    'statement' => $query->sql,
+                    'type' => 'sql',
+                    'user' => $query->connection->getConfig('username'),
                 ],
-            ];
-
-            app('query-log')->push($query);
+            ]);
+            $span->setType('db.mysql.query');
+            $span->setAction('query');
+            $agent->putEvent($span);
         });
     }
 }

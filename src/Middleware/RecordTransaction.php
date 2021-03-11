@@ -1,16 +1,16 @@
 <?php
 
-namespace PhilKra\ElasticApmLaravel\Middleware;
+namespace DanGoscomb\ElasticApmLaravel\Middleware;
 
 use Closure;
 use Illuminate\Support\Facades\Log;
-use PhilKra\Agent;
-use PhilKra\Helper\Timer;
+use Nipwaayoni\Agent;
+use Nipwaayoni\Helper\Timer;
 
 class RecordTransaction
 {
     /**
-     * @var \PhilKra\Agent
+     * @var \Nipwaayoni\Agent
      */
     protected $agent;
     /**
@@ -36,7 +36,8 @@ class RecordTransaction
      */
     public function handle($request, Closure $next)
     {
-        $transaction = $this->agent->startTransaction(
+        $transaction = app('apm-transaction');
+        $transaction->setTransactionName(
             $this->getTransactionName($request)
         );
 
@@ -64,12 +65,9 @@ class RecordTransaction
             'type' => 'HTTP'
         ]);
 
-        $transaction->setSpans(app('query-log')->toArray());
-
         if (config('elastic-apm.transactions.use_route_uri')) {
             $transaction->setTransactionName($this->getRouteUriTransactionName($request));
         }
-
         $transaction->stop($this->timer->getElapsedInMilliseconds());
 
         return $response;

@@ -1,7 +1,7 @@
 <?php
 
 
-namespace PhilKra\ElasticApmLaravel\Contracts;
+namespace DanGoscomb\ElasticApmLaravel\Contracts;
 
 
 interface VersionResolver

@@ -1,6 +1,6 @@
 <?php
 
-namespace PhilKra\ElasticApmLaravel\Apm;
+namespace DanGoscomb\ElasticApmLaravel\Apm;
 
 
 use Illuminate\Support\Collection;

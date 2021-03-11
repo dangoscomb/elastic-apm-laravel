@@ -1,5 +1,5 @@
 {
-   "name":"philkra/elastic-apm-laravel",
+   "name":"dangoscomb/elastic-apm-laravel",
    "keywords":[  
       "laravel",
       "elastic",
@@ -11,12 +11,12 @@
    "description":"A package to integrate Elastic APM into Laravel",
    "license":"MIT",
    "require":{  
-      "php":">= 7.2",
-      "illuminate/database":"^6.0",
-      "illuminate/http":"^6.0",
-      "illuminate/routing":"^6.0",
-      "illuminate/support":"^6.0",
-      "philkra/elastic-apm-php-agent":">=6.5.3",
+      "php":">= 7.4",
+      "illuminate/database":"^7.0",
+      "illuminate/http":"^7.0",
+      "illuminate/routing":"^7.0",
+      "illuminate/support":"^7.0",
+      "nipwaayoni/elastic-apm-php-agent":">=7.5.2",
       "ramsey/uuid":"^3.0"
    },
    "require-dev":{  
@@ -24,21 +24,21 @@
    },
    "autoload":{  
       "psr-4":{  
-         "PhilKra\\ElasticApmLaravel\\":"src/"
+         "DanGoscomb\\ElasticApmLaravel\\":"src/"
       }
    },
    "autoload-dev":{  
       "psr-4":{  
-         "PhilKra\\Tests\\":"tests/"
+         "DanGiscinb\\Tests\\":"tests/"
       }
    },
    "extra":{  
       "laravel":{  
          "providers":[  
-            "PhilKra\\ElasticApmLaravel\\Providers\\ElasticApmServiceProvider"
+            "DanGoscomb\\ElasticApmLaravel\\Providers\\ElasticApmServiceProvider"
          ],
          "aliases":{  
-            "ElasticApm":"PhilKra\\ElasticApmLaravel\\Facades\\ElasticApm"
+            "ElasticApm":"DanGoscomb\\ElasticApmLaravel\\Facades\\ElasticApm"
          }
       }
    },
@@ -54,6 +54,10 @@
       {  
          "name":"George Boot",
          "email":"george@entryninja.com"
+      },
+      {
+         "name": "Dan Goscomb",
+         "email": "dan@flowplex.co.uk"
       }
    ]
 }
