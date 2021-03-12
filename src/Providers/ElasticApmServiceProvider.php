@@ -3,6 +3,7 @@
 namespace DanGoscomb\ElasticApmLaravel\Providers;
 
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Redis\Events\CommandExecuted;
 use Illuminate\Support\Collection;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -150,8 +151,52 @@ class ElasticApmServiceProvider extends ServiceProvider
         });
     }
 
+    protected function getStackTrace() {
+        $stackTrace = $this->stripVendorTraces(
+            collect(
+                debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT, config('elastic-apm.spans.backtraceDepth', 50))
+            )
+        );
+
+        return $stackTrace->map(function ($trace) {
+            $sourceCode = $this->getSourceCode($trace);
+
+            return [
+                'function' => Arr::get($trace, 'function') . Arr::get($trace, 'type') . Arr::get($trace,
+                        'function'),
+                'abs_path' => Arr::get($trace, 'file'),
+                'filename' => basename(Arr::get($trace, 'file')),
+                'lineno' => Arr::get($trace, 'line', 0),
+                'library_frame' => false,
+                'vars' => $vars ?? null,
+                'pre_context' => optional($sourceCode->get('pre_context'))->toArray(),
+                'context_line' => optional($sourceCode->get('context_line'))->first(),
+                'post_context' => optional($sourceCode->get('post_context'))->toArray(),
+            ];
+        })->values();
+    }
+
     protected function listenForQueries()
     {
+        $this->app->events->listen(CommandExecuted::class, function (CommandExecuted $commandExecuted) {
+            $agent = app('elastic-apm');
+            $span = $agent->factory()->newSpan($commandExecuted->command . ' ' . join(' ', $commandExecuted->parameters), app('apm-transaction'));
+            $span->start(((microtime(true)*1000)-$commandExecuted->time)/1000);
+            $span->stop();
+            $span->setStacktrace($this->getStackTrace()->all());
+            $span->setCustomContext([
+                'db' => [
+                    'instance' => $commandExecuted->connection->getName(),
+                    'statement' => $commandExecuted->command . ' ' . join(' ', $commandExecuted->parameters),
+                    'type' => 'redis',
+                    'user' => 'test' // $commandExecuted->connection->getConfig('username'),
+                ],
+            ]);
+            $span->setType('db.redis');
+            $span->setAction($commandExecuted->command);
+            $agent->putEvent($span);
+        });
+
         $this->app->events->listen(QueryExecuted::class, function (QueryExecuted $query) {
             if (config('elastic-apm.spans.querylog.enabled') === 'auto') {
                 if ($query->time < config('elastic-apm.spans.querylog.threshold')) {
@@ -159,34 +204,11 @@ class ElasticApmServiceProvider extends ServiceProvider
                 }
             }
 
-            $stackTrace = $this->stripVendorTraces(
-                collect(
-                    debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT, config('elastic-apm.spans.backtraceDepth', 50))
-                )
-            );
-
-            $stackTrace = $stackTrace->map(function ($trace) {
-                $sourceCode = $this->getSourceCode($trace);
-
-                return [
-                    'function' => Arr::get($trace, 'function') . Arr::get($trace, 'type') . Arr::get($trace,
-                            'function'),
-                    'abs_path' => Arr::get($trace, 'file'),
-                    'filename' => basename(Arr::get($trace, 'file')),
-                    'lineno' => Arr::get($trace, 'line', 0),
-                    'library_frame' => false,
-                    'vars' => $vars ?? null,
-                    'pre_context' => optional($sourceCode->get('pre_context'))->toArray(),
-                    'context_line' => optional($sourceCode->get('context_line'))->first(),
-                    'post_context' => optional($sourceCode->get('post_context'))->toArray(),
-                ];
-            })->values();
-
             $agent = app('elastic-apm');
-            $span = $agent->factory()->newSpan('Eloquent Query', app('apm-transaction'));
+            $span = $agent->factory()->newSpan(mb_strtoupper(preg_split('/WHERE/i', $query->sql)[0]), app('apm-transaction'));
             $span->start(((microtime(true)*1000)-$query->time)/1000);
             $span->stop();
-            $span->setStacktrace($stackTrace->all());
+            $span->setStacktrace($this->getStackTrace()->all());
             $span->setCustomContext([
                 'db' => [
                     'instance' => $query->connection->getDatabaseName(),
@@ -195,9 +217,10 @@ class ElasticApmServiceProvider extends ServiceProvider
                     'user' => $query->connection->getConfig('username'),
                 ],
             ]);
-            $span->setType('db.mysql.query');
+            $span->setType('db.mysql');
             $span->setAction('query');
             $agent->putEvent($span);
         });
+
     }
 }
